@@ -28,6 +28,12 @@ Aplicación web sencilla para calcular facturas de forma rápida desde cualquier
 2. Abre `http://localhost:5000` en tu navegador.
 3. Ingresa productos, impuestos y descuentos, luego pulsa **Calcular factura**.
 
+## Despliegue en Render
+Render usa `gunicorn` para ejecutar la aplicación. Asegúrate de que esté en `requirements.txt` y de incluir el `Procfile` con este contenido:
+```text
+web: gunicorn app:app
+```
+
 ## Notas
 - Si estás en Windows, activa el entorno virtual con:
   ```bash
