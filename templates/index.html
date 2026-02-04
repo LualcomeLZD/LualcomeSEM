@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Factura rápida</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}" />
+  </head>
+  <body>
+    <main class="container">
+      <header class="hero">
+        <h1>Factura rápida</h1>
+        <p>Calcula totales e impuestos desde tu celular en segundos.</p>
+      </header>
+
+      <form class="invoice" method="post">
+        <section class="card">
+          <div class="section-header">
+            <h2>Productos o servicios</h2>
+            <button class="ghost" type="button" id="add-row">Añadir línea</button>
+          </div>
+          <div class="table" id="items">
+            <div class="table-head">
+              <span>Descripción</span>
+              <span>Cantidad</span>
+              <span>Precio unitario</span>
+              <span>Descuento (%)</span>
+              <span>Total</span>
+            </div>
+            {% if items %}
+              {% for item in items %}
+              <div class="table-row">
+                <input name="item_desc[]" type="text" value="{{ item.description }}" placeholder="Producto" />
+                <input name="item_qty[]" type="number" inputmode="decimal" min="0" step="0.01" value="{{ item.quantity }}" />
+                <input name="item_price[]" type="number" inputmode="decimal" min="0" step="0.01" value="{{ item.unit_price }}" />
+                <input name="item_discount[]" type="number" inputmode="decimal" min="0" step="0.01" value="{{ item.discount_rate }}" />
+                <span class="row-total">{{ '%.2f'|format(item.total) }}</span>
+              </div>
+              {% endfor %}
+            {% else %}
+              <div class="table-row">
+                <input name="item_desc[]" type="text" placeholder="Producto" />
+                <input name="item_qty[]" type="number" inputmode="decimal" min="0" step="0.01" value="1" />
+                <input name="item_price[]" type="number" inputmode="decimal" min="0" step="0.01" placeholder="0.00" />
+                <input name="item_discount[]" type="number" inputmode="decimal" min="0" step="0.01" value="0" />
+                <span class="row-total">0.00</span>
+              </div>
+            {% endif %}
+          </div>
+        </section>
+
+        <section class="card">
+          <h2>Resumen</h2>
+          <div class="summary">
+            <label>
+              IVA (%) Colombia
+              <input name="tax_rate" type="number" inputmode="decimal" min="0" step="0.01" value="{{ tax_rate }}" />
+            </label>
+            <label>
+              Descuento
+              <input name="discount" type="number" inputmode="decimal" min="0" step="0.01" value="{{ discount }}" />
+            </label>
+          </div>
+          <div class="totals">
+            <div>
+              <span>Subtotal</span>
+              <strong>{{ '%.2f'|format(subtotal) }}</strong>
+            </div>
+            <div>
+              <span>Impuestos</span>
+              <strong>{{ '%.2f'|format(tax_amount) }}</strong>
+            </div>
+            <div class="total">
+              <span>Total</span>
+              <strong>{{ '%.2f'|format(total) }}</strong>
+            </div>
+          </div>
+          <button class="primary" type="submit">Calcular factura</button>
+        </section>
+      </form>
+
+      <footer class="footer">
+        <p>Tip: Puedes guardar esta página en la pantalla de inicio del móvil.</p>
+      </footer>
+    </main>
+
+    <script src="{{ url_for('static', filename='app.js') }}"></script>
+  </body>
+</html>
