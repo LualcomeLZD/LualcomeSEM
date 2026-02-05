@@ -11,41 +11,29 @@
       <header class="hero">
         <h1>Factura rápida</h1>
         <p>Calcula totales e impuestos desde tu celular en segundos.</p>
+        <a class="ghost logout" href="{{ url_for('logout') }}">Cerrar sesión</a>
       </header>
 
       <form class="invoice" method="post">
         <section class="card">
-          <div class="section-header">
-            <h2>Productos o servicios</h2>
-            <button class="ghost" type="button" id="add-row">Añadir línea</button>
-          </div>
-          <div class="table" id="items">
-            <div class="table-head">
-              <span>Descripción</span>
-              <span>Cantidad</span>
-              <span>Precio unitario</span>
-              <span>Descuento (%)</span>
-              <span>Total</span>
+          <h2>Datos del emisor</h2>
+          <div class="issuer">
+            <div>
+              <span>Razón social</span>
+              <strong>{{ issuer.razon_social }}</strong>
             </div>
-            {% if items %}
-              {% for item in items %}
-              <div class="table-row">
-                <input name="item_desc[]" type="text" value="{{ item.description }}" placeholder="Producto" />
-                <input name="item_qty[]" type="number" inputmode="decimal" min="0" step="0.01" value="{{ item.quantity }}" />
-                <input name="item_price[]" type="number" inputmode="decimal" min="0" step="0.01" value="{{ item.unit_price }}" />
-                <input name="item_discount[]" type="number" inputmode="decimal" min="0" step="0.01" value="{{ item.discount_rate }}" />
-                <span class="row-total">{{ '%.2f'|format(item.total) }}</span>
-              </div>
-              {% endfor %}
-            {% else %}
-              <div class="table-row">
-                <input name="item_desc[]" type="text" placeholder="Producto" />
-                <input name="item_qty[]" type="number" inputmode="decimal" min="0" step="0.01" value="1" />
-                <input name="item_price[]" type="number" inputmode="decimal" min="0" step="0.01" placeholder="0.00" />
-                <input name="item_discount[]" type="number" inputmode="decimal" min="0" step="0.01" value="0" />
-                <span class="row-total">0.00</span>
-              </div>
-            {% endif %}
+            <div>
+              <span>NIT</span>
+              <strong>{{ issuer.nit }}</strong>
+            </div>
+            <div>
+              <span>Actividad económica</span>
+              <strong>{{ issuer.actividad_economica }}</strong>
+            </div>
+            <div>
+              <span>Responsable</span>
+              <strong>{{ issuer.responsable_iva }}</strong>
+            </div>
           </div>
         </section>
 
@@ -53,29 +41,32 @@
           <h2>Resumen</h2>
           <div class="summary">
             <label>
-              IVA (%) Colombia
-              <input name="tax_rate" type="number" inputmode="decimal" min="0" step="0.01" value="{{ tax_rate }}" />
+              Valor total cobrado al cliente
+              <input name="total" type="number" inputmode="decimal" min="0" step="0.01" placeholder="0.00" required />
             </label>
             <label>
-              Descuento
-              <input name="discount" type="number" inputmode="decimal" min="0" step="0.01" value="{{ discount }}" />
+              IVA fijo ({{ tax_rate }}%)
+              <input type="text" value="{{ tax_rate }}%" disabled />
             </label>
           </div>
           <div class="totals">
             <div>
-              <span>Subtotal</span>
-              <strong>{{ '%.2f'|format(subtotal) }}</strong>
+              <span>Valor base</span>
+              <strong id="base-amount">{{ '%.2f'|format(totals.base) }}</strong>
             </div>
             <div>
-              <span>Impuestos</span>
-              <strong>{{ '%.2f'|format(tax_amount) }}</strong>
+              <span>IVA</span>
+              <strong id="iva-amount">{{ '%.2f'|format(totals.iva) }}</strong>
             </div>
             <div class="total">
               <span>Total</span>
-              <strong>{{ '%.2f'|format(total) }}</strong>
+              <strong id="total-amount">{{ '%.2f'|format(totals.total) }}</strong>
             </div>
           </div>
           <button class="primary" type="submit">Calcular factura</button>
+          {% if last_invoice %}
+            <a class="ghost" href="{{ url_for('descargar') }}">Descargar PDF</a>
+          {% endif %}
         </section>
       </form>
 

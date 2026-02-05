@@ -1,26 +1,42 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
-from decimal import Decimal, InvalidOperation
-from typing import List
+from dataclasses import asdict, dataclass
+from datetime import datetime
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
+import json
+import os
+from pathlib import Path
+from typing import Dict
 
-from flask import Flask, render_template, request
+from flask import Flask, redirect, render_template, request, session, url_for, send_file
+from reportlab.lib.pagesizes import letter
+from reportlab.lib.units import cm
+from reportlab.pdfgen import canvas
 
 app = Flask(__name__)
+app.config["SECRET_KEY"] = os.getenv("SECRET_KEY", "lualcome-sem-secret")
+
+DATA_DIR = Path("data")
+SEQUENCE_FILE = DATA_DIR / "sequence.json"
+
+ISSUER = {
+    "razon_social": "LUALCOME SEM",
+    "nit": "1081924702",
+    "pais": "Colombia",
+    "responsable_iva": "No responsable de IVA",
+    "actividad_economica": "8020",
+}
+
+TAX_RATE = Decimal("19")
+ADMIN_USER = os.getenv("ADMIN_USER", "admin")
+ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "admin123")
 
 
 @dataclass
-class LineItem:
-    description: str
-    quantity: Decimal
-    unit_price: Decimal
-    discount_rate: Decimal
-
-    @property
-    def total(self) -> Decimal:
-        subtotal = self.quantity * self.unit_price
-        discount_amount = subtotal * self.discount_rate / Decimal("100")
-        return subtotal - discount_amount
+class InvoiceTotals:
+    total: Decimal
+    base: Decimal
+    iva: Decimal
 
 
 def _to_decimal(value: str, default: Decimal = Decimal("0")) -> Decimal:
@@ -33,56 +49,147 @@ def _to_decimal(value: str, default: Decimal = Decimal("0")) -> Decimal:
         return default
 
 
-def _parse_items(form: dict) -> List[LineItem]:
-    descriptions = form.getlist("item_desc[]")
-    quantities = form.getlist("item_qty[]")
-    prices = form.getlist("item_price[]")
-    discounts = form.getlist("item_discount[]")
+def _calculate_totals(total: Decimal) -> InvoiceTotals:
+    if total < 0:
+        total = Decimal("0")
+    divider = Decimal("1") + (TAX_RATE / Decimal("100"))
+    base = (total / divider).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    iva = (total - base).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    total = total.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    return InvoiceTotals(total=total, base=base, iva=iva)
 
-    items: List[LineItem] = []
-    for description, qty, price, discount in zip(descriptions, quantities, prices, discounts):
-        quantity = _to_decimal(qty)
-        unit_price = _to_decimal(price)
-        discount_rate = _to_decimal(discount)
-        if quantity <= 0 or unit_price < 0:
-            continue
-        items.append(
-            LineItem(
-                description=description.strip() or "Producto",
-                quantity=quantity,
-                unit_price=unit_price,
-                discount_rate=discount_rate,
-            )
-        )
-    return items
+
+def _ensure_sequence_file() -> None:
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    if not SEQUENCE_FILE.exists():
+        SEQUENCE_FILE.write_text(json.dumps({"last": 0}), encoding="utf-8")
+
+
+def _next_invoice_number() -> int:
+    _ensure_sequence_file()
+    data = json.loads(SEQUENCE_FILE.read_text(encoding="utf-8"))
+    last = int(data.get("last", 0))
+    next_number = last + 1
+    SEQUENCE_FILE.write_text(json.dumps({"last": next_number}), encoding="utf-8")
+    return next_number
+
+
+def _login_required():
+    if not session.get("logged_in"):
+        return redirect(url_for("login"))
+    return None
+
+
+def _create_pdf(invoice: Dict[str, str], totals: InvoiceTotals, number: int) -> Path:
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    filename = DATA_DIR / f"factura_{number}.pdf"
+    pdf = canvas.Canvas(str(filename), pagesize=letter)
+    width, height = letter
+
+    y = height - 2 * cm
+    pdf.setFont("Helvetica-Bold", 14)
+    pdf.drawString(2 * cm, y, "Factura comercial / Cuenta de cobro")
+
+    y -= 1 * cm
+    pdf.setFont("Helvetica", 11)
+    pdf.drawString(2 * cm, y, f"Razón social: {ISSUER['razon_social']}")
+    y -= 0.6 * cm
+    pdf.drawString(2 * cm, y, f"NIT: {ISSUER['nit']}")
+    y -= 0.6 * cm
+    pdf.drawString(2 * cm, y, f"Actividad económica: {ISSUER['actividad_economica']}")
+    y -= 0.6 * cm
+    pdf.drawString(2 * cm, y, f"Responsable: {ISSUER['responsable_iva']}")
+
+    y -= 1 * cm
+    pdf.setFont("Helvetica-Bold", 11)
+    pdf.drawString(2 * cm, y, f"Factura No. {number:05d}")
+    pdf.drawString(10 * cm, y, f"Fecha: {invoice['fecha_emision']}")
+
+    y -= 1 * cm
+    pdf.setFont("Helvetica-Bold", 11)
+    pdf.drawString(2 * cm, y, "Detalle de valores")
+    y -= 0.7 * cm
+    pdf.setFont("Helvetica", 11)
+    pdf.drawString(2 * cm, y, f"Valor base: ${totals.base}")
+    y -= 0.5 * cm
+    pdf.drawString(2 * cm, y, f"IVA ({TAX_RATE}%): ${totals.iva}")
+    y -= 0.5 * cm
+    pdf.drawString(2 * cm, y, f"Total: ${totals.total}")
+
+    y -= 1.2 * cm
+    pdf.setFont("Helvetica", 9)
+    legal_text = (
+        "Este documento corresponde a una factura comercial / cuenta de cobro.\n"
+        "No constituye factura electrónica DIAN.\n"
+        "El emisor se encuentra inscrito en el Registro Único Tributario (RUT)."
+    )
+    for line in legal_text.split("\n"):
+        pdf.drawString(2 * cm, y, line)
+        y -= 0.4 * cm
+
+    pdf.showPage()
+    pdf.save()
+    return filename
+
+
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    error = None
+    if request.method == "POST":
+        username = request.form.get("username", "")
+        password = request.form.get("password", "")
+        if username == ADMIN_USER and password == ADMIN_PASSWORD:
+            session["logged_in"] = True
+            return redirect(url_for("index"))
+        error = "Credenciales inválidas."
+    return render_template("login.html", error=error)
+
+
+@app.route("/logout")
+def logout():
+    session.clear()
+    return redirect(url_for("login"))
 
 
 @app.route("/", methods=["GET", "POST"])
 def index():
-    items: List[LineItem] = []
-    tax_rate = Decimal("19")
-    discount = Decimal("0")
+    login_check = _login_required()
+    if login_check:
+        return login_check
 
+    totals = InvoiceTotals(total=Decimal("0"), base=Decimal("0"), iva=Decimal("0"))
     if request.method == "POST":
-        items = _parse_items(request.form)
-        tax_rate = _to_decimal(request.form.get("tax_rate", "0"))
-        discount = _to_decimal(request.form.get("discount", "0"))
-
-    subtotal = sum((item.total for item in items), Decimal("0"))
-    tax_amount = subtotal * tax_rate / Decimal("100")
-    total = subtotal + tax_amount - discount
-    if total < 0:
-        total = Decimal("0")
+        total_input = _to_decimal(request.form.get("total", "0"))
+        totals = _calculate_totals(total_input)
+        invoice_number = _next_invoice_number()
+        invoice_data = {
+            "numero": invoice_number,
+            "fecha_emision": datetime.now().strftime("%Y-%m-%d"),
+        }
+        session["last_invoice"] = {
+            **invoice_data,
+            "totals": {k: str(v) for k, v in asdict(totals).items()},
+        }
+        session["last_pdf"] = str(_create_pdf(invoice_data, totals, invoice_number))
 
     return render_template(
         "index.html",
-        items=items,
-        tax_rate=tax_rate,
-        discount=discount,
-        subtotal=subtotal,
-        tax_amount=tax_amount,
-        total=total,
+        issuer=ISSUER,
+        tax_rate=TAX_RATE,
+        totals=totals,
+        last_invoice=session.get("last_invoice"),
     )
+
+
+@app.route("/descargar")
+def descargar():
+    login_check = _login_required()
+    if login_check:
+        return login_check
+    pdf_path = session.get("last_pdf")
+    if not pdf_path or not Path(pdf_path).exists():
+        return redirect(url_for("index"))
+    return send_file(pdf_path, as_attachment=True)
 
 
 if __name__ == "__main__":

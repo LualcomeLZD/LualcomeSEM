@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Ingreso - Lualcome SEM</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}" />
+  </head>
+  <body>
+    <main class="container">
+      <section class="card login">
+        <h1>Acceso al sistema</h1>
+        <p>Solo el administrador puede ingresar.</p>
+        {% if error %}
+          <p class="error">{{ error }}</p>
+        {% endif %}
+        <form method="post" class="summary">
+          <label>
+            Usuario
+            <input name="username" type="text" required />
+          </label>
+          <label>
+            Contraseña
+            <input name="password" type="password" required />
+          </label>
+          <button class="primary" type="submit">Ingresar</button>
+        </form>
+      </section>
+    </main>
+  </body>
+</html>
